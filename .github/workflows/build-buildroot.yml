@@ -5,13 +5,10 @@ on:
   push:
     branches:
       - master
-    paths:
-      - '.config'
 
 env:
   REPO_URL: https://github.com/buildroot/buildroot
   REPO_BRANCH: 2024.02.x
-  CONFIG_FILE: .config
   TZ: Asia/Shanghai
 
 jobs:
@@ -30,27 +27,22 @@ jobs:
         sudo -E apt-get -qq update
         sudo -E apt-get -qq install -y wget git bc bison flex libssl-dev make libc6-dev libncurses5-dev rsync cpio unzip python3 file
         sudo timedatectl set-timezone "$TZ"
-        sudo mkdir -p /workdir
-        sudo chown $USER:$GROUPS /workdir
 
     - name: Clone source code
-      working-directory: /workdir
       run: |
-        df -hT $PWD
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH buildroot
-        ln -sf /workdir/buildroot $GITHUB_WORKSPACE/buildroot
 
-    - name: Load custom configuration
+    - name: Configure Buildroot
       run: |
-        [ -e files ] && mv files buildroot/files
-        [ -e $CONFIG_FILE ] && mv $CONFIG_FILE buildroot/.config
         cd buildroot
+        make qemu_aarch64_virt_defconfig
+        echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to My Own System!"' >> .config
 
     - name: Compile the firmware
       id: compile
       run: |
         cd buildroot
-        echo -e "$(nproc) thread compile"
+        echo ">>> Compiling my own system..."
         make -j$(nproc) || make -j1 || make -j1 V=s
         echo "::set-output name=status::success"
 
@@ -58,9 +50,9 @@ jobs:
       if: (!cancelled())
       run: df -hT
 
-    - name: Upload firmware directory
+    - name: Upload firmware
       uses: actions/upload-artifact@v4
       if: steps.compile.outputs.status == 'success' && !cancelled()
       with:
-        name: buildroot_firmware
+        name: myown-system
         path: buildroot/output/images
