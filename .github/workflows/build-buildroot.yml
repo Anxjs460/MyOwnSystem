@@ -37,18 +37,17 @@ jobs:
         cd buildroot
         make qemu_aarch64_virt_defconfig
 
-        # 把 overlay 打包进镜像
         echo 'BR2_ROOTFS_OVERLAY="board/qemu/aarch64-virt/rootfs_overlay"' >> .config
-
-        # 系统名字
         echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"' >> .config
         echo 'BR2_TARGET_GENERIC_HOSTNAME="lumina"' >> .config
 
-        # 依赖库
+        # 所有依赖库，一次性全加上
         echo 'BR2_PACKAGE_NCURSES=y' >> .config
         echo 'BR2_PACKAGE_READLINE=y' >> .config
         echo 'BR2_PACKAGE_SHADOW=y' >> .config
         echo 'BR2_PACKAGE_ZLIB=y' >> .config
+        echo 'BR2_PACKAGE_BZIP2=y' >> .config
+        echo 'BR2_PACKAGE_XZ=y' >> .config
 
         # 安装器需要的工具
         echo 'BR2_PACKAGE_E2FSPROGS=y' >> .config
@@ -58,10 +57,7 @@ jobs:
 
         # 常用工具
         echo 'BR2_PACKAGE_NANO=y' >> .config
-        echo 'BR2_PACKAGE_VIM=y' >> .config
         echo 'BR2_PACKAGE_HTOP=y' >> .config
-        echo 'BR2_PACKAGE_PYTHON3=y' >> .config
-        echo 'BR2_PACKAGE_GIT=y' >> .config
         echo 'BR2_PACKAGE_WGET=y' >> .config
         echo 'BR2_PACKAGE_CURL=y' >> .config
         echo 'BR2_PACKAGE_BASH=y' >> .config
@@ -71,7 +67,6 @@ jobs:
         echo 'BR2_PACKAGE_ZIP=y' >> .config
         echo 'BR2_PACKAGE_CA_CERTIFICATES=y' >> .config
 
-        # root 登录
         echo 'BR2_TARGET_GENERIC_GETTY=y' >> .config
         echo 'BR2_TARGET_GENERIC_GETTY_PORT="console"' >> .config
 
@@ -82,10 +77,7 @@ jobs:
 
         cat > board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer << 'EOF'
         #!/bin/sh
-
-        if [ -f /etc/.installed ]; then
-            exit 0
-        fi
+        if [ -f /etc/.installed ]; then exit 0; fi
 
         clear
         echo "========================================"
@@ -93,15 +85,12 @@ jobs:
         echo "========================================"
         echo ""
         echo "欢迎使用 Lumina OS 安装器！"
-        echo "本安装器会把 Lumina OS 安装到第二块磁盘。"
         echo ""
 
         TARGET=/dev/vdb
 
         if [ ! -b "$TARGET" ]; then
             echo "未检测到目标磁盘 $TARGET"
-            echo "请确保 QEMU 启动时挂载了第二块空白磁盘。"
-            echo ""
             echo "按 Enter 继续使用 Live 模式..."
             read
             touch /etc/.installed
@@ -109,66 +98,41 @@ jobs:
         fi
 
         echo "检测到目标磁盘：$TARGET"
-        echo ""
-        echo "⚠️  警告：安装将格式化 $TARGET，所有数据会丢失！"
-        echo ""
-        echo "输入 yes 开始安装，其他任意键取消："
+        echo "⚠️  警告：安装将格式化 $TARGET！"
+        echo "输入 yes 开始安装："
         read confirm
-
         if [ "$confirm" != "yes" ]; then
-            echo "已取消安装。"
+            echo "已取消。"
             touch /etc/.installed
             exit 0
         fi
 
-        echo ""
-        echo ">>> 第一步：设置 root 密码"
         echo "请输入 root 密码："
         read -s password
         echo "root:$password" | chpasswd
 
-        echo ""
-        echo ">>> 第二步：设置主机名"
         echo "请输入主机名："
         read hostname
         echo "$hostname" > /etc/hostname
         hostname "$hostname"
 
-        echo ""
-        echo ">>> 第三步：分区"
         parted -s "$TARGET" mklabel msdos
         parted -s "$TARGET" mkpart primary ext4 1MiB 100%
         sleep 1
-
-        echo ">>> 第四步：格式化"
         mkfs.ext4 -F "${TARGET}1"
 
-        echo ">>> 第五步：挂载目标盘"
         mkdir -p /mnt/target
         mount "${TARGET}1" /mnt/target
 
-        echo ">>> 第六步：复制系统文件"
         for dir in bin etc lib lib64 opt root sbin usr var; do
-            if [ -d "/$dir" ]; then
-                cp -a "/$dir" /mnt/target/
-            fi
+            [ -d "/$dir" ] && cp -a "/$dir" /mnt/target/
         done
 
-        echo ">>> 第七步：安装引导"
         dd if=/dev/vda of="$TARGET" bs=512 count=1 conv=notrunc 2>/dev/null
-
-        echo ">>> 第八步：卸载"
         umount /mnt/target
-
         touch /etc/.installed
 
-        echo ""
-        echo "========================================"
-        echo "  Lumina OS 安装完成！"
-        echo "========================================"
-        echo ""
-        echo "请关闭 QEMU，从目标盘启动。"
-        echo "按 Enter 重启..."
+        echo "安装完成！按 Enter 重启..."
         read
         reboot
         EOF
@@ -179,7 +143,6 @@ jobs:
       id: compile
       run: |
         cd buildroot
-        echo ">>> Compiling Lumina OS..."
         make -j$(nproc) || make -j1 || make -j1 V=s
 
     - name: Package ZIP
