@@ -21,14 +21,24 @@ jobs:
       run: |
         cd buildroot
         make qemu_aarch64_virt_defconfig
+
         echo 'BR2_ROOTFS_OVERLAY="board/qemu/aarch64-virt/rootfs_overlay"' >> .config
         echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"' >> .config
         echo 'BR2_TARGET_GENERIC_HOSTNAME="lumina"' >> .config
+
+        # 基础依赖库，一次性全加
         echo 'BR2_PACKAGE_NCURSES=y' >> .config
         echo 'BR2_PACKAGE_READLINE=y' >> .config
         echo 'BR2_PACKAGE_SHADOW=y' >> .config
         echo 'BR2_PACKAGE_ZLIB=y' >> .config
+        echo 'BR2_PACKAGE_LIBCAP=y' >> .config
+
+        # util-linux 和 e2fsprogs（互相依赖，一起加）
+        echo 'BR2_PACKAGE_UTIL_LINUX=y' >> .config
+        echo 'BR2_PACKAGE_UTIL_LINUX_BINARIES=y' >> .config
         echo 'BR2_PACKAGE_E2FSPROGS=y' >> .config
+
+        # 常用工具
         echo 'BR2_PACKAGE_NANO=y' >> .config
         echo 'BR2_PACKAGE_HTOP=y' >> .config
         echo 'BR2_PACKAGE_WGET=y' >> .config
@@ -39,6 +49,7 @@ jobs:
         echo 'BR2_PACKAGE_UNZIP=y' >> .config
         echo 'BR2_PACKAGE_ZIP=y' >> .config
         echo 'BR2_PACKAGE_CA_CERTIFICATES=y' >> .config
+
         echo 'BR2_TARGET_GENERIC_GETTY=y' >> .config
         echo 'BR2_TARGET_GENERIC_GETTY_PORT="console"' >> .config
 
