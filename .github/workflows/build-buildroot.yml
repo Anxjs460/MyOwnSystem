@@ -37,6 +37,9 @@ jobs:
         cd buildroot
         make qemu_aarch64_virt_defconfig
 
+        # 关键：把 overlay 打包进镜像
+        echo 'BR2_ROOTFS_OVERLAY="board/qemu/aarch64-virt/rootfs_overlay"' >> .config
+
         # 系统名字
         echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"' >> .config
         echo 'BR2_TARGET_GENERIC_HOSTNAME="lumina"' >> .config
@@ -94,7 +97,7 @@ jobs:
         EOF
         chmod +x board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer
 
-        # opkg 源配置（指向 OpenWrt 的 aarch64 源）
+        # opkg 源配置
         cat > board/qemu/aarch64-virt/rootfs_overlay/etc/opkg.conf << 'EOF'
         src/gz openwrt_core https://downloads.openwrt.org/releases/23.05.0/targets/armsr/armv8/packages
         src/gz openwrt_base https://downloads.openwrt.org/releases/23.05.0/packages/aarch64_cortex-a53/base
