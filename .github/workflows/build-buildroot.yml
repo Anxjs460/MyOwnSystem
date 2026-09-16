@@ -1,61 +1,34 @@
-name: Build Lumina OS Installer
+name: Build Lumina OS
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - master
-
-env:
-  REPO_URL: https://github.com/buildroot/buildroot
-  REPO_BRANCH: 2024.02.x
-  TZ: Asia/Shanghai
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
 
-    - name: Initialization environment
-      env:
-        DEBIAN_FRONTEND: noninteractive
+    - name: Install deps
       run: |
-        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        sudo -E apt-get -qq update
-        sudo -E apt-get -qq install -y wget git bc bison flex libssl-dev make libc6-dev libncurses5-dev rsync cpio unzip python3 file zip
-        sudo timedatectl set-timezone "$TZ"
+        sudo apt-get update
+        sudo apt-get install -y wget git bc bison flex libssl-dev make libc6-dev libncurses5-dev rsync cpio unzip python3 file zip
 
-    - name: Clone source code
-      run: |
-        git clone --depth 1 $REPO_URL -b $REPO_BRANCH buildroot
+    - name: Clone buildroot
+      run: git clone --depth 1 https://github.com/buildroot/buildroot -b 2024.02.x buildroot
 
-    - name: Configure Lumina OS
+    - name: Configure
       run: |
         cd buildroot
         make qemu_aarch64_virt_defconfig
-
         echo 'BR2_ROOTFS_OVERLAY="board/qemu/aarch64-virt/rootfs_overlay"' >> .config
         echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"' >> .config
         echo 'BR2_TARGET_GENERIC_HOSTNAME="lumina"' >> .config
-
-        # 所有依赖库，一次性全加上
         echo 'BR2_PACKAGE_NCURSES=y' >> .config
         echo 'BR2_PACKAGE_READLINE=y' >> .config
         echo 'BR2_PACKAGE_SHADOW=y' >> .config
         echo 'BR2_PACKAGE_ZLIB=y' >> .config
-        echo 'BR2_PACKAGE_BZIP2=y' >> .config
-        echo 'BR2_PACKAGE_XZ=y' >> .config
-
-        # 安装器需要的工具
         echo 'BR2_PACKAGE_E2FSPROGS=y' >> .config
-        echo 'BR2_PACKAGE_UTIL_LINUX=y' >> .config
-        echo 'BR2_PACKAGE_UTIL_LINUX_BINARIES=y' >> .config
-        echo 'BR2_PACKAGE_DOSFSTOOLS=y' >> .config
-
-        # 常用工具
         echo 'BR2_PACKAGE_NANO=y' >> .config
         echo 'BR2_PACKAGE_HTOP=y' >> .config
         echo 'BR2_PACKAGE_WGET=y' >> .config
@@ -66,91 +39,61 @@ jobs:
         echo 'BR2_PACKAGE_UNZIP=y' >> .config
         echo 'BR2_PACKAGE_ZIP=y' >> .config
         echo 'BR2_PACKAGE_CA_CERTIFICATES=y' >> .config
-
         echo 'BR2_TARGET_GENERIC_GETTY=y' >> .config
         echo 'BR2_TARGET_GENERIC_GETTY_PORT="console"' >> .config
 
-    - name: Add Lumina installer
+    - name: Installer
       run: |
         cd buildroot
         mkdir -p board/qemu/aarch64-virt/rootfs_overlay/etc/init.d
-
         cat > board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer << 'EOF'
         #!/bin/sh
         if [ -f /etc/.installed ]; then exit 0; fi
-
         clear
         echo "========================================"
         echo "        Lumina OS Installer"
         echo "========================================"
         echo ""
-        echo "欢迎使用 Lumina OS 安装器！"
-        echo ""
-
         TARGET=/dev/vdb
-
         if [ ! -b "$TARGET" ]; then
             echo "未检测到目标磁盘 $TARGET"
-            echo "按 Enter 继续使用 Live 模式..."
-            read
             touch /etc/.installed
             exit 0
         fi
-
-        echo "检测到目标磁盘：$TARGET"
-        echo "⚠️  警告：安装将格式化 $TARGET！"
-        echo "输入 yes 开始安装："
+        echo "检测到 $TARGET，输入 yes 格式化并安装："
         read confirm
-        if [ "$confirm" != "yes" ]; then
-            echo "已取消。"
-            touch /etc/.installed
-            exit 0
-        fi
-
-        echo "请输入 root 密码："
+        [ "$confirm" != "yes" ] && touch /etc/.installed && exit 0
+        echo "设置 root 密码："
         read -s password
         echo "root:$password" | chpasswd
-
-        echo "请输入主机名："
+        echo "设置主机名："
         read hostname
         echo "$hostname" > /etc/hostname
-        hostname "$hostname"
-
-        parted -s "$TARGET" mklabel msdos
-        parted -s "$TARGET" mkpart primary ext4 1MiB 100%
-        sleep 1
-        mkfs.ext4 -F "${TARGET}1"
-
+        mkfs.ext4 -F "$TARGET"
         mkdir -p /mnt/target
-        mount "${TARGET}1" /mnt/target
-
-        for dir in bin etc lib lib64 opt root sbin usr var; do
-            [ -d "/$dir" ] && cp -a "/$dir" /mnt/target/
+        mount "$TARGET" /mnt/target
+        for d in bin etc lib lib64 opt root sbin usr var; do
+            [ -d "/$d" ] && cp -a "/$d" /mnt/target/
         done
-
-        dd if=/dev/vda of="$TARGET" bs=512 count=1 conv=notrunc 2>/dev/null
         umount /mnt/target
         touch /etc/.installed
-
-        echo "安装完成！按 Enter 重启..."
+        echo "安装完成，按 Enter 重启..."
         read
         reboot
         EOF
-
         chmod +x board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer
 
-    - name: Compile Lumina OS
-      id: compile
+    - name: Compile
       run: |
         cd buildroot
         make -j$(nproc) || make -j1 || make -j1 V=s
 
-    - name: Package ZIP
+    - name: Package
       run: |
         cd buildroot/output/images
         zip -r lumina-os.zip Image rootfs.ext4 2>/dev/null || true
 
-    - name: Upload Lumina OS
+    - name: Upload
       uses: actions/upload-artifact@v4
       if: (!cancelled())
       with:
