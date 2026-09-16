@@ -1,4 +1,4 @@
-name: Build Buildroot
+name: Build Lumina OS with opkg
 
 on:
   workflow_dispatch:
@@ -25,34 +25,99 @@ jobs:
       run: |
         sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc
         sudo -E apt-get -qq update
-        sudo -E apt-get -qq install -y wget git bc bison flex libssl-dev make libc6-dev libncurses5-dev rsync cpio unzip python3 file
+        sudo -E apt-get -qq install -y wget git bc bison flex libssl-dev make libc6-dev libncurses5-dev rsync cpio unzip python3 file zip
         sudo timedatectl set-timezone "$TZ"
 
     - name: Clone source code
       run: |
         git clone --depth 1 $REPO_URL -b $REPO_BRANCH buildroot
 
-    - name: Configure Buildroot
+    - name: Configure Lumina OS
       run: |
         cd buildroot
         make qemu_aarch64_virt_defconfig
-        echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to My Own System!"' >> .config
 
-    - name: Compile the firmware
+        # 系统名字
+        echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"' >> .config
+        echo 'BR2_TARGET_GENERIC_HOSTNAME="lumina"' >> .config
+
+        # 启用 opkg
+        echo 'BR2_PACKAGE_OPKG=y' >> .config
+
+        # 常用工具
+        echo 'BR2_PACKAGE_NANO=y' >> .config
+        echo 'BR2_PACKAGE_HTOP=y' >> .config
+        echo 'BR2_PACKAGE_WGET=y' >> .config
+        echo 'BR2_PACKAGE_CURL=y' >> .config
+        echo 'BR2_PACKAGE_CA_CERTIFICATES=y' >> .config
+
+        # root 登录
+        echo 'BR2_TARGET_GENERIC_GETTY=y' >> .config
+        echo 'BR2_TARGET_GENERIC_GETTY_PORT="console"' >> .config
+
+    - name: Add Lumina installer and opkg config
+      run: |
+        cd buildroot
+        mkdir -p board/qemu/aarch64-virt/rootfs_overlay/etc/init.d
+        mkdir -p board/qemu/aarch64-virt/rootfs_overlay/etc
+
+        # 安装器脚本
+        cat > board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer << 'EOF'
+        #!/bin/sh
+        if [ ! -f /etc/.installed ]; then
+            clear
+            echo "================================"
+            echo "       Welcome to Lumina OS"
+            echo "================================"
+            echo ""
+            echo "首次启动，请完成初始化设置。"
+            echo ""
+            echo "请设置 root 密码："
+            read -s password
+            echo "root:$password" | chpasswd
+            echo ""
+            echo "请设置主机名（系统名字）："
+            read hostname
+            echo "$hostname" > /etc/hostname
+            hostname "$hostname"
+            touch /etc/.installed
+            echo ""
+            echo "设置完成，系统即将重启..."
+            sleep 2
+            reboot
+        fi
+        EOF
+        chmod +x board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer
+
+        # opkg 源配置（指向 OpenWrt 的 aarch64 源）
+        cat > board/qemu/aarch64-virt/rootfs_overlay/etc/opkg.conf << 'EOF'
+        src/gz openwrt_core https://downloads.openwrt.org/releases/23.05.0/targets/armsr/armv8/packages
+        src/gz openwrt_base https://downloads.openwrt.org/releases/23.05.0/packages/aarch64_cortex-a53/base
+        src/gz openwrt_luci https://downloads.openwrt.org/releases/23.05.0/packages/aarch64_cortex-a53/luci
+        src/gz openwrt_packages https://downloads.openwrt.org/releases/23.05.0/packages/aarch64_cortex-a53/packages
+        src/gz openwrt_routing https://downloads.openwrt.org/releases/23.05.0/packages/aarch64_cortex-a53/routing
+        src/gz openwrt_telephony https://downloads.openwrt.org/releases/23.05.0/packages/aarch64_cortex-a53/telephony
+        dest root /
+        dest ram /tmp
+        lists_dir ext /var/opkg-lists
+        option overlay_root /overlay
+        EOF
+
+    - name: Compile Lumina OS
       id: compile
       run: |
         cd buildroot
-        echo ">>> Compiling my own system..."
+        echo ">>> Compiling Lumina OS with opkg..."
         make -j$(nproc) || make -j1 || make -j1 V=s
-        echo "::set-output name=status::success"
 
-    - name: Check space usage
-      if: (!cancelled())
-      run: df -hT
+    - name: Package ZIP
+      run: |
+        cd buildroot/output/images
+        zip -r lumina-os.zip Image rootfs.ext4 2>/dev/null || true
 
-    - name: Upload firmware
+    - name: Upload Lumina OS
       uses: actions/upload-artifact@v4
-      if: steps.compile.outputs.status == 'success' && !cancelled()
+      if: (!cancelled())
       with:
-        name: myown-system
-        path: buildroot/output/images
+        name: lumina-os
+        path: buildroot/output/images/lumina-os.zip
