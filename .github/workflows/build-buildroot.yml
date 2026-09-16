@@ -48,6 +48,7 @@ jobs:
         echo 'BR2_PACKAGE_NCURSES=y' >> .config
         echo 'BR2_PACKAGE_READLINE=y' >> .config
         echo 'BR2_PACKAGE_SHADOW=y' >> .config
+        echo 'BR2_PACKAGE_ZLIB=y' >> .config
 
         # 安装器需要的工具
         echo 'BR2_PACKAGE_E2FSPROGS=y' >> .config
@@ -97,7 +98,6 @@ jobs:
 
         TARGET=/dev/vdb
 
-        # 检测目标磁盘
         if [ ! -b "$TARGET" ]; then
             echo "未检测到目标磁盘 $TARGET"
             echo "请确保 QEMU 启动时挂载了第二块空白磁盘。"
