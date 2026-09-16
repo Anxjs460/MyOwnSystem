@@ -44,6 +44,10 @@ jobs:
         # 启用 opkg
         echo 'BR2_PACKAGE_OPKG=y' >> .config
 
+        # 依赖库（必须先启用，否则 htop/nano 会报依赖错误）
+        echo 'BR2_PACKAGE_NCURSES=y' >> .config
+        echo 'BR2_PACKAGE_READLINE=y' >> .config
+
         # 常用工具
         echo 'BR2_PACKAGE_NANO=y' >> .config
         echo 'BR2_PACKAGE_HTOP=y' >> .config
