@@ -22,30 +22,23 @@ jobs:
         cd buildroot
         make qemu_aarch64_virt_defconfig
 
-        echo 'BR2_ROOTFS_OVERLAY="board/qemu/aarch64-virt/rootfs_overlay"' >> .config
-        echo 'BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"' >> .config
-        echo 'BR2_TARGET_GENERIC_HOSTNAME="lumina"' >> .config
+        # 写入想要的配置
+        cat >> .config << 'EOF'
+        BR2_ROOTFS_OVERLAY="board/qemu/aarch64-virt/rootfs_overlay"
+        BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"
+        BR2_TARGET_GENERIC_HOSTNAME="lumina"
+        BR2_PACKAGE_E2FSPROGS=y
+        BR2_PACKAGE_NANO=y
+        BR2_PACKAGE_HTOP=y
+        BR2_PACKAGE_WGET=y
+        BR2_PACKAGE_BASH=y
+        BR2_PACKAGE_SHADOW=y
+        BR2_TARGET_GENERIC_GETTY=y
+        BR2_TARGET_GENERIC_GETTY_PORT="console"
+        EOF
 
-        # ---- e2fsprogs 的完整依赖链 ----
-        echo 'BR2_PACKAGE_ZLIB=y' >> .config
-        echo 'BR2_PACKAGE_LIBCAP=y' >> .config
-        echo 'BR2_PACKAGE_UTIL_LINUX=y' >> .config
-        echo 'BR2_PACKAGE_UTIL_LINUX_BINARIES=y' >> .config
-        echo 'BR2_PACKAGE_E2FSPROGS=y' >> .config
-
-        # ---- 基础依赖 ----
-        echo 'BR2_PACKAGE_NCURSES=y' >> .config
-        echo 'BR2_PACKAGE_READLINE=y' >> .config
-        echo 'BR2_PACKAGE_SHADOW=y' >> .config
-
-        # ---- 常用工具 ----
-        echo 'BR2_PACKAGE_NANO=y' >> .config
-        echo 'BR2_PACKAGE_HTOP=y' >> .config
-        echo 'BR2_PACKAGE_WGET=y' >> .config
-        echo 'BR2_PACKAGE_BASH=y' >> .config
-
-        echo 'BR2_TARGET_GENERIC_GETTY=y' >> .config
-        echo 'BR2_TARGET_GENERIC_GETTY_PORT="console"' >> .config
+        # 关键：让 Buildroot 自动补全所有依赖
+        make olddefconfig
 
     - name: Installer
       run: |
@@ -54,62 +47,35 @@ jobs:
         cat > board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer << 'EOF'
         #!/bin/sh
         if [ -f /etc/.installed ]; then exit 0; fi
-
         clear
         echo "========================================"
         echo "        Lumina OS Installer"
         echo "========================================"
         echo ""
-        echo "欢迎使用 Lumina OS 安装器！"
-        echo ""
-
         TARGET=/dev/vdb
-
         if [ ! -b "$TARGET" ]; then
             echo "未检测到目标磁盘 $TARGET"
-            echo "按 Enter 继续使用 Live 模式..."
-            read
             touch /etc/.installed
             exit 0
         fi
-
-        echo "检测到目标磁盘：$TARGET"
-        echo "⚠️  警告：安装将格式化 $TARGET！"
-        echo "输入 yes 开始安装："
+        echo "检测到 $TARGET，输入 yes 格式化并安装："
         read confirm
-        if [ "$confirm" != "yes" ]; then
-            echo "已取消。"
-            touch /etc/.installed
-            exit 0
-        fi
-
-        echo "请输入 root 密码："
+        [ "$confirm" != "yes" ] && touch /etc/.installed && exit 0
+        echo "设置 root 密码："
         read -s password
         echo "root:$password" | chpasswd
-
-        echo "请输入主机名："
+        echo "设置主机名："
         read hostname
         echo "$hostname" > /etc/hostname
-
-        echo ">>> 格式化 $TARGET ..."
         mkfs.ext4 -F "$TARGET"
-
-        echo ">>> 挂载并复制文件 ..."
         mkdir -p /mnt/target
         mount "$TARGET" /mnt/target
-
         for d in bin etc lib lib64 opt root sbin usr var; do
             [ -d "/$d" ] && cp -a "/$d" /mnt/target/
         done
-
         umount /mnt/target
         touch /etc/.installed
-
-        echo ""
-        echo "========================================"
-        echo "  Lumina OS 安装完成！"
-        echo "========================================"
-        echo "按 Enter 重启..."
+        echo "安装完成，按 Enter 重启..."
         read
         reboot
         EOF
