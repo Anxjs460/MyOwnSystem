@@ -72,20 +72,16 @@ jobs:
         echo ""
         EOF
 
-    - name: Build ext4
+    - name: Build squashfs
       run: |
         cd build
-        dd if=/dev/zero of=rootfs.img bs=1M count=200
-        mkfs.ext4 -F rootfs.img
-        mkdir -p mnt
-        sudo mount -o loop rootfs.img mnt
-        sudo cp -a rootfs/* mnt/
-        sudo umount mnt
+        sudo apt-get install -y squashfs-tools
+        sudo mksquashfs rootfs rootfs.squashfs -comp gzip -noappend
 
     - name: Package
       run: |
         cd build
-        zip -r lumina-os.zip vmlinuz-virt initramfs-virt rootfs.img
+        zip -r lumina-os.zip vmlinuz-virt initramfs-virt rootfs.squashfs
 
     - name: Upload
       uses: actions/upload-artifact@v4
