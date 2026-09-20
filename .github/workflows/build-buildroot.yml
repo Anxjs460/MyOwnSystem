@@ -1,4 +1,4 @@
-name: Build Lumina OS
+name: Build Lumina OS Alpine
 
 on:
   workflow_dispatch:
@@ -9,91 +9,87 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Install deps
+    - name: Download Alpine
       run: |
-        sudo apt-get update
-        sudo apt-get install -y wget git bc bison flex libssl-dev make libc6-dev libncurses5-dev rsync cpio unzip python3 file zip
+        mkdir -p build && cd build
+        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-minirootfs-3.19.1-aarch64.tar.gz
+        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/vmlinuz-virt
+        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/initramfs-virt
+        mkdir rootfs
+        sudo tar xzf alpine-minirootfs-3.19.1-aarch64.tar.gz -C rootfs
 
-    - name: Clone buildroot
-      run: git clone --depth 1 https://github.com/buildroot/buildroot -b 2024.02.x buildroot
-
-    - name: Configure
+    - name: Customize
       run: |
-        cd buildroot
-        make qemu_aarch64_virt_defconfig
-
-        # 写入想要的配置
-        cat >> .config << 'EOF'
-        BR2_ROOTFS_OVERLAY="board/qemu/aarch64-virt/rootfs_overlay"
-        BR2_TARGET_GENERIC_ISSUE="Welcome to Lumina OS!"
-        BR2_TARGET_GENERIC_HOSTNAME="lumina"
-        BR2_PACKAGE_E2FSPROGS=y
-        BR2_PACKAGE_NANO=y
-        BR2_PACKAGE_HTOP=y
-        BR2_PACKAGE_WGET=y
-        BR2_PACKAGE_BASH=y
-        BR2_PACKAGE_SHADOW=y
-        BR2_TARGET_GENERIC_GETTY=y
-        BR2_TARGET_GENERIC_GETTY_PORT="console"
+        cd build/rootfs
+        echo "lumina" | sudo tee etc/hostname
+        sudo tee etc/motd << 'EOF'
+        ==============================
+               Welcome to Lumina OS
+        ==============================
         EOF
 
-        # 关键：让 Buildroot 自动补全所有依赖
-        make olddefconfig
-
-    - name: Installer
-      run: |
-        cd buildroot
-        mkdir -p board/qemu/aarch64-virt/rootfs_overlay/etc/init.d
-        cat > board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer << 'EOF'
+        sudo tee usr/local/bin/lumina-install << 'EOF'
         #!/bin/sh
-        if [ -f /etc/.installed ]; then exit 0; fi
         clear
         echo "========================================"
-        echo "        Lumina OS Installer"
+        echo "       Lumina OS 工具安装器"
         echo "========================================"
         echo ""
-        TARGET=/dev/vdb
-        if [ ! -b "$TARGET" ]; then
-            echo "未检测到目标磁盘 $TARGET"
-            touch /etc/.installed
-            exit 0
-        fi
-        echo "检测到 $TARGET，输入 yes 格式化并安装："
-        read confirm
-        [ "$confirm" != "yes" ] && touch /etc/.installed && exit 0
-        echo "设置 root 密码："
-        read -s password
-        echo "root:$password" | chpasswd
-        echo "设置主机名："
-        read hostname
-        echo "$hostname" > /etc/hostname
-        mkfs.ext4 -F "$TARGET"
-        mkdir -p /mnt/target
-        mount "$TARGET" /mnt/target
-        for d in bin etc lib lib64 opt root sbin usr var; do
-            [ -d "/$d" ] && cp -a "/$d" /mnt/target/
-        done
-        umount /mnt/target
-        touch /etc/.installed
-        echo "安装完成，按 Enter 重启..."
-        read
-        reboot
-        EOF
-        chmod +x board/qemu/aarch64-virt/rootfs_overlay/etc/init.d/S99installer
+        echo "  1) nano    文本编辑器"
+        echo "  2) htop    系统监视器"
+        echo "  3) python3 Python"
+        echo "  4) git     版本控制"
+        echo "  5) curl    网络工具"
+        echo "  6) vim     编辑器"
+        echo "  7) 全部安装"
+        echo "  0) 退出"
+        echo ""
+        echo "输入数字："
+        read choice
 
-    - name: Compile
+        case $choice in
+            1) apk add nano ;;
+            2) apk add htop ;;
+            3) apk add python3 ;;
+            4) apk add git ;;
+            5) apk add curl ;;
+            6) apk add vim ;;
+            7) apk add nano htop python3 git curl vim ;;
+            0) exit 0 ;;
+            *) echo "无效选择" ;;
+        esac
+
+        echo ""
+        echo "安装完成！按 Enter 继续..."
+        read
+        EOF
+
+        sudo chmod +x usr/local/bin/lumina-install
+
+        sudo tee etc/profile.d/lumina.sh << 'EOF'
+        echo ""
+        echo "提示：输入 lumina-install 打开工具安装器"
+        echo ""
+        EOF
+
+    - name: Build ext4
       run: |
-        cd buildroot
-        make -j$(nproc) || make -j1 || make -j1 V=s
+        cd build
+        dd if=/dev/zero of=rootfs.img bs=1M count=200
+        mkfs.ext4 -F rootfs.img
+        mkdir -p mnt
+        sudo mount -o loop rootfs.img mnt
+        sudo cp -a rootfs/* mnt/
+        sudo umount mnt
 
     - name: Package
       run: |
-        cd buildroot/output/images
-        zip -r lumina-os.zip Image rootfs.ext4 2>/dev/null || true
+        cd build
+        zip -r lumina-os.zip vmlinuz-virt initramfs-virt rootfs.img
 
     - name: Upload
       uses: actions/upload-artifact@v4
       if: (!cancelled())
       with:
         name: lumina-os
-        path: buildroot/output/images/lumina-os.zip
+        path: build/lumina-os.zip
