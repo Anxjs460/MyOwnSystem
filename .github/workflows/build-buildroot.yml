@@ -1,4 +1,4 @@
-name: Build Lumina OS Alpine
+name: Build Lumina OS
 
 on:
   workflow_dispatch:
@@ -9,22 +9,44 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Download Alpine netboot
+    - name: Install deps
       run: |
-        mkdir -p build && cd build
-        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-netboot-3.19.9-aarch64.tar.gz
-        tar xzf alpine-netboot-3.19.9-aarch64.tar.gz
+        sudo apt-get update
+        sudo apt-get install -y wget git bc bison flex libssl-dev make libc6-dev libncurses5-dev rsync cpio unzip python3 file zip
 
-    - name: Download minirootfs
+    - name: Clone buildroot
+      run: git clone --depth 1 https://github.com/buildroot/buildroot -b 2024.02.x buildroot
+
+    - name: Configure Buildroot kernel only
       run: |
-        cd build
+        cd buildroot
+        make qemu_aarch64_virt_defconfig
+
+        # 只要内核，不要 rootfs
+        echo '# BR2_TARGET_ROOTFS_EXT2 is not set' >> .config
+        echo 'BR2_LINUX_KERNEL_EXT4_FS=y' >> .config
+        echo 'BR2_LINUX_KERNEL_EXT2_FS=y' >> .config
+        echo 'BR2_LINUX_KERNEL_VIRTIO=y' >> .config
+        echo 'BR2_LINUX_KERNEL_VIRTIO_BLK=y' >> .config
+        echo 'BR2_LINUX_KERNEL_VIRTIO_NET=y' >> .config
+
+        make olddefconfig
+
+    - name: Compile kernel
+      run: |
+        cd buildroot
+        make linux -j$(nproc) || make linux -j1
+
+    - name: Download Alpine minirootfs
+      run: |
+        cd buildroot
         wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-minirootfs-3.19.9-aarch64.tar.gz
-        mkdir rootfs
-        sudo tar xzf alpine-minirootfs-3.19.9-aarch64.tar.gz -C rootfs
+        mkdir alpine-rootfs
+        sudo tar xzf alpine-minirootfs-3.19.9-aarch64.tar.gz -C alpine-rootfs
 
-    - name: Customize
+    - name: Customize Alpine rootfs
       run: |
-        cd build/rootfs
+        cd buildroot/alpine-rootfs
 
         echo "lumina" | sudo tee etc/hostname
 
@@ -34,30 +56,6 @@ jobs:
         ==============================
         EOF
 
-        # 自定义 init：挂 tmpfs 让 apk 能写
-        sudo tee init << 'EOF'
-        #!/bin/sh
-        mount -t proc proc /proc
-        mount -t sysfs sys /sys
-        mount -t devtmpfs dev /dev
-        hostname lumina
-
-        # 让 apk 能写
-        mount -t tmpfs tmpfs /var/cache/apk
-        mount -t tmpfs tmpfs /lib/apk/db
-        mount -t tmpfs tmpfs /etc/apk
-        mount -t tmpfs tmpfs /tmp
-
-        echo ""
-        cat /etc/motd
-        echo ""
-        echo "提示：输入 lumina-install 打开工具安装器"
-        echo ""
-        exec /bin/sh
-        EOF
-        sudo chmod +x init
-
-        # 安装器
         sudo mkdir -p usr/bin
         sudo bash -c 'cat > usr/bin/lumina-install << "SCRIPT"
         #!/bin/sh
@@ -96,20 +94,40 @@ jobs:
         SCRIPT'
         sudo chmod +x usr/bin/lumina-install
 
-    - name: Build squashfs
+        # 可写层
+        sudo tee init << 'EOF'
+        #!/bin/sh
+        mount -t proc proc /proc
+        mount -t sysfs sys /sys
+        mount -t devtmpfs dev /dev
+        hostname lumina
+        echo ""
+        cat /etc/motd
+        echo ""
+        echo "提示：输入 lumina-install 打开工具安装器"
+        echo ""
+        exec /bin/sh
+        EOF
+        sudo chmod +x init
+
+    - name: Build ext4 rootfs
       run: |
-        cd build
-        sudo apt-get install -y squashfs-tools
-        sudo mksquashfs rootfs rootfs.squashfs -comp gzip -noappend
+        cd buildroot
+        dd if=/dev/zero of=rootfs.ext4 bs=1M count=200
+        mkfs.ext4 -F rootfs.ext4
+        mkdir -p mnt
+        sudo mount -o loop rootfs.ext4 mnt
+        sudo cp -a alpine-rootfs/* mnt/
+        sudo umount mnt
 
     - name: Package
       run: |
-        cd build
-        zip -r lumina-os.zip boot/vmlinuz-virt boot/initramfs-virt boot/modloop-virt rootfs.squashfs
+        cd buildroot
+        zip -r lumina-os.zip output/images/Image rootfs.ext4
 
     - name: Upload
       uses: actions/upload-artifact@v4
       if: (!cancelled())
       with:
         name: lumina-os
-        path: build/lumina-os.zip
+        path: buildroot/lumina-os.zip
