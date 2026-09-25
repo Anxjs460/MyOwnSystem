@@ -9,19 +9,26 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Download Alpine
+    - name: Download Alpine netboot
       run: |
         mkdir -p build && cd build
-        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-virt-3.19.1-aarch64.tar.gz
-        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/vmlinuz-virt
-        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/initramfs-virt
+        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-netboot-3.19.9-aarch64.tar.gz
+        tar xzf alpine-netboot-3.19.9-aarch64.tar.gz
+        ls -la boot/
+
+    - name: Download minirootfs
+      run: |
+        cd build
+        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-minirootfs-3.19.9-aarch64.tar.gz
         mkdir rootfs
-        sudo tar xzf alpine-virt-3.19.1-aarch64.tar.gz -C rootfs
+        sudo tar xzf alpine-minirootfs-3.19.9-aarch64.tar.gz -C rootfs
 
     - name: Customize
       run: |
         cd build/rootfs
+
         echo "lumina" | sudo tee etc/hostname
+
         sudo tee etc/motd << 'EOF'
         ==============================
                Welcome to Lumina OS
@@ -66,12 +73,6 @@ jobs:
 
         sudo chmod +x usr/local/bin/lumina-install
 
-        sudo tee etc/profile.d/lumina.sh << 'EOF'
-        echo ""
-        echo "提示：输入 lumina-install 打开工具安装器"
-        echo ""
-        EOF
-
     - name: Build squashfs
       run: |
         cd build
@@ -81,7 +82,7 @@ jobs:
     - name: Package
       run: |
         cd build
-        zip -r lumina-os.zip vmlinuz-virt initramfs-virt rootfs.squashfs
+        zip -r lumina-os.zip boot/vmlinuz-virt boot/initramfs-virt boot/modloop-virt rootfs.squashfs
 
     - name: Upload
       uses: actions/upload-artifact@v4
