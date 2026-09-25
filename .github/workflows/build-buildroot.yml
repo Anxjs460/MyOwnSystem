@@ -12,11 +12,11 @@ jobs:
     - name: Download Alpine
       run: |
         mkdir -p build && cd build
-        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-minirootfs-3.19.1-aarch64.tar.gz
+        wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-virt-3.19.1-aarch64.tar.gz
         wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/vmlinuz-virt
         wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/netboot/initramfs-virt
         mkdir rootfs
-        sudo tar xzf alpine-minirootfs-3.19.1-aarch64.tar.gz -C rootfs
+        sudo tar xzf alpine-virt-3.19.1-aarch64.tar.gz -C rootfs
 
     - name: Customize
       run: |
