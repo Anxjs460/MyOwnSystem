@@ -14,7 +14,6 @@ jobs:
         mkdir -p build && cd build
         wget https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/aarch64/alpine-netboot-3.19.9-aarch64.tar.gz
         tar xzf alpine-netboot-3.19.9-aarch64.tar.gz
-        ls -la boot/
 
     - name: Download minirootfs
       run: |
@@ -35,6 +34,23 @@ jobs:
         ==============================
         EOF
 
+        # 自定义 init：不依赖 OpenRC
+        sudo tee init << 'EOF'
+        #!/bin/sh
+        mount -t proc proc /proc
+        mount -t sysfs sys /sys
+        mount -t devtmpfs dev /dev
+        hostname lumina
+        echo ""
+        cat /etc/motd
+        echo ""
+        echo "提示：输入 lumina-install 打开工具安装器"
+        echo ""
+        exec /bin/sh
+        EOF
+        sudo chmod +x init
+
+        # 工具安装器
         sudo tee usr/local/bin/lumina-install << 'EOF'
         #!/bin/sh
         clear
@@ -70,7 +86,6 @@ jobs:
         echo "安装完成！按 Enter 继续..."
         read
         EOF
-
         sudo chmod +x usr/local/bin/lumina-install
 
     - name: Build squashfs
