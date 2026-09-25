@@ -34,13 +34,20 @@ jobs:
         ==============================
         EOF
 
-        # 自定义 init
+        # 自定义 init：挂 tmpfs 让 apk 能写
         sudo tee init << 'EOF'
         #!/bin/sh
         mount -t proc proc /proc
         mount -t sysfs sys /sys
         mount -t devtmpfs dev /dev
         hostname lumina
+
+        # 让 apk 能写
+        mount -t tmpfs tmpfs /var/cache/apk
+        mount -t tmpfs tmpfs /lib/apk/db
+        mount -t tmpfs tmpfs /etc/apk
+        mount -t tmpfs tmpfs /tmp
+
         echo ""
         cat /etc/motd
         echo ""
@@ -50,7 +57,7 @@ jobs:
         EOF
         sudo chmod +x init
 
-        # 把 lumina-install 写到 /usr/bin/（默认在 PATH 里）
+        # 安装器
         sudo mkdir -p usr/bin
         sudo bash -c 'cat > usr/bin/lumina-install << "SCRIPT"
         #!/bin/sh
